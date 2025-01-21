@@ -27,7 +27,6 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
     uint256 public withdrawLimit;
     uint256 public ozFees;
     address public pancakeRouterAddress;
-
     address public teamAddress;
     address public rewardPool;
     address public admin;
@@ -49,6 +48,7 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
 
     //============== MAPPINGS ==============
     mapping(address => UserInfo) public userInfo;
+    mapping(string => address) public tokens;
 
     //============== EVENTS ==============
     event TicketPurchased(
@@ -82,9 +82,8 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
 
         // pancakeRouterAddress = 0x10ED43C718714eb63d5aA57B78B54704E256024E;
         // pancakeRouter = IUniswapV2Router02(pancakeRouterAddress);
-
-        // honeyToken = ;
-        // bullasToken = ;
+        honeyToken = IERC20(tokens["HONEY"]);
+        bullasToken = IERC20(tokens["BULLAS"]);
         // honeyPairAddress = ;
         // bullasPairAddress = ;
         // admin = ;
@@ -121,8 +120,8 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
         );
 
         IERC20 paymentToken = token == PaymentToken.HONEY
-            ? honeyToken
-            : bullasToken;
+            ? tokens["HONEY"]
+            : tokens["BULLAS"]; 
 
         uint256 amount;
         uint256 ticketAmount = (numOfTicket * ticketPrice) / decimals;
@@ -163,6 +162,7 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
      * @dev Function to Withdraw Tickets
      * @param numOfTicket to select quantity of tickets to withdraw
      */
+
     function withdrawTicket(uint256 numOfTicket, PaymentToken token)
         external
         whenNotPaused
@@ -171,6 +171,7 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
         UserInfo storage user = userInfo[_msgSender()];
         require(user.ticketBalance >= numOfTicket, "Insufficient Balance");
         require(numOfTicket >= 1, "Amount should be greater than Zero");
+    
         require(
             user.lastWithdrawalTime + 24 hours <= block.timestamp ||
                 user.lastWithdrawalTime == 0,
@@ -178,13 +179,12 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
         );
 
         IERC20 paymentToken = token == PaymentToken.HONEY
-            ? honeyToken
-            : bullasToken;
+            ? tokens["HONEY"]
+            : tokens["BULLAS"];
 
         uint256 amount = (numOfTicket * ticketPrice) / decimals;
         uint256 teamAmount = (numOfTicket * teamPercentage) / decimals;
-        uint256 rewardPoolAmount = (numOfTicket * rewardPoolPercentage) /
-            decimals;
+        uint256 rewardPoolAmount = (numOfTicket * rewardPoolPercentage) / decimals;
         uint256 burnAmount = (numOfTicket * burnPercentage) / decimals;
 
         uint256 balance = paymentToken.balanceOf(address(this));
@@ -194,8 +194,7 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
             "Withdrawal amount exceeds Limit"
         );
 
-        uint256 ticketAmount = amount -
-            (teamAmount + rewardPoolAmount + burnAmount);
+        uint256 ticketAmount = amount -(teamAmount + rewardPoolAmount + burnAmount);
 
         user.lastWithdrawalTime = block.timestamp;
         user.ticketBalance -= numOfTicket;
@@ -217,13 +216,13 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
     function swapTokensForEth(uint256 amount, PaymentToken token) private {
         address[] memory path = new address[](2);
         path[0] = token == PaymentToken.HONEY
-            ? address(honeyToken)
-            : address(bullasToken);
+            ? address(tokens["HONEY"])
+            : address(tokens["BULLAS"]);
         path[1] = pancakeRouter.WETH();
 
         IERC20 paymentToken = token == PaymentToken.HONEY
-            ? honeyToken
-            : bullasToken;
+            ? tokens["HONEY"]
+            : tokens["BULLAS"];
         paymentToken.approve(address(pancakeRouter), amount);
 
         pancakeRouter.swapExactTokensForETH(
@@ -291,10 +290,10 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
      * @dev Function to set the new GQToken address that is used Purchasing tickets
      * @param tokenAdd The new GQToken address
      */
-    function setTokenAddress(address tokenAdd) external onlyOwner {
+    function setTokenAddress(address tokenAdd, string tokenName) external onlyOwner {
         require(tokenAdd != address(0), "Set Token Address: Invalid address");
-        GQToken = IERC20(tokenAdd);
-        emit SetTokenAddress(tokenAdd);
+        tokens[tokenName] = tokenAdd;
+        emit SetTokenAddress(tokenAdd, tokenName);
     }
 
     /**
@@ -425,8 +424,8 @@ contract TicketSystemMultiToken is Ownable, ReentrancyGuard, Pausable {
         PaymentToken token
     ) internal {
         IERC20 paymentToken = token == PaymentToken.HONEY
-            ? honeyToken
-            : bullasToken;
+            ? tokens["HONEY"]
+            : tokens["BULLAS"];
 
         bool teamTransfer = paymentToken.transfer(teamAddress, teamAmnt);
         require(teamTransfer, "Team transfer failed");
