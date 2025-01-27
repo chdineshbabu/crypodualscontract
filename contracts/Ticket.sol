@@ -11,7 +11,7 @@ interface ICrocQuery {
         address base,
         address quote,
         uint256 poolIdx
-    ) external view returns (uint128);
+    ) external view returns (uint128);      
 }
 interface ICrocSwapDex{
 function multiSwap (
