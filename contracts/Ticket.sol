@@ -23,7 +23,7 @@ struct SwapStep {
     uint256 poolIdx;
     address base;
     address quote;
-    bool isBuy;
+    bool isBuy; 
 }   
 }
 
