@@ -5,7 +5,7 @@
     import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
     import "@openzeppelin/contracts/security/Pausable.sol";
     import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
+// Contract address Temp: 0x5b2644b5d33fbfe55a1909d3f41f70c9f9220808 
     // interface ICrocQuery {
     //     function queryPrice(
     //         address base,
@@ -48,7 +48,7 @@
         address public quoteToken;
         uint256 public poolIdx;
         uint256 public decimals;
-        address public swapRouter;
+        address public swapRouter;    
         // ICrocQuery public crocQuery;
         // ICrocSwapDex public crocSwapDex;
 
