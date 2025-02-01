@@ -1,0 +1,100 @@
+{
+    "HONEY_BULLA": {
+        "id": "0x6de52dd6b9bf7a81ea2e7cbba9ab8d151a0f1bc28251cac3e88486fd08cf384d",
+        "poolIdx": "36001",
+        "base": "0x0e4aaf1351de4c0264c5c7056ef3777b41bd8e03",
+        "quote": "0x2206182a4264bce0663681448b24fc6781fc8e40",
+        "timeCreate": "1737230484",
+        "tvlUsd": "12.701341744265592216",
+        "baseAmount": "6.350670872132796108",
+        "quoteAmount": "4.203870559500362678",
+        "bgtApy": "0",
+        "template": {
+            "feeRate": 3000,
+            "__typename": "PoolTemplate"
+        },
+        "baseInfo": {
+            "id": "0x0e4aaf1351de4c0264c5c7056ef3777b41bd8e03",
+            "address": "0x0e4aaf1351de4c0264c5c7056ef3777b41bd8e03",
+            "symbol": "HONEY",
+            "name": "Honey",
+            "decimals": 18,
+            "usdValue": "1",
+            "beraValue": "0.1440385943328989586116961474700665",
+            "__typename": "TokenInformation"
+        },
+        "quoteInfo": {
+            "id": "0x2206182a4264bce0663681448b24fc6781fc8e40",
+            "address": "0x2206182a4264bce0663681448b24fc6781fc8e40",
+            "symbol": "BULLA",
+            "name": "Bulla token",
+            "decimals": 18,
+            "usdValue": "0",
+            "beraValue": "0",
+            "__typename": "TokenInformation"
+        },
+        "shareAddress": {
+            "address": "0x970aadc4ae0d94f2cba27d9834ab369826582d74",
+            "__typename": "PoolShareAddress"
+        },
+        "vault": null,
+        "latestPoolDayData": {
+            "tvlUsd": "12.701341744265592216",
+            "feesUsd": "0",
+            "volumeUsd": "0",
+            "__typename": "PoolDayData"
+        },
+        "__typename": "Pool"
+    },
+    "Honey-WBERA": {
+        "id": "0xf3c6e90f5e9d01e46a779e0a44d5298f7cd3123d306bb4f282ecfe2af5dff72e",
+        "poolIdx": "36000",
+        "base": "0x0e4aaf1351de4c0264c5c7056ef3777b41bd8e03",
+        "quote": "0x7507c1dc16935b82698e4c63f2746a2fcf994df8",
+        "timeCreate": "1717804626",
+        "tvlUsd": "585815160.7083021879872463622702012",
+        "baseAmount": "293240587.432520791246919992",
+        "quoteAmount": "42231473.598968123037247109",
+        "bgtApy": "952.49597889283815839362258023842",
+        "template": {
+            "feeRate": 500,
+            "__typename": "PoolTemplate"
+        },
+        "baseInfo": {
+            "id": "0x0e4aaf1351de4c0264c5c7056ef3777b41bd8e03",
+            "address": "0x0e4aaf1351de4c0264c5c7056ef3777b41bd8e03",
+            "symbol": "HONEY",
+            "name": "Honey",
+            "decimals": 18,
+            "usdValue": "1",
+            "beraValue": "0.1440164677363642245721201276364709",
+            "__typename": "TokenInformation"
+        },
+        "quoteInfo": {
+            "id": "0x7507c1dc16935b82698e4c63f2746a2fcf994df8",
+            "address": "0x7507c1dc16935b82698e4c63f2746a2fcf994df8",
+            "symbol": "WBERA",
+            "name": "Wrapped Bera",
+            "decimals": 18,
+            "usdValue": "6.92787980959625699033145864668093",
+            "beraValue": "1",
+            "__typename": "TokenInformation"
+        },
+        "shareAddress": {
+            "address": "0xd28d852cbcc68dcec922f6d5c7a8185dbaa104b7",
+            "__typename": "PoolShareAddress"
+        },
+        "latestPoolDayData": {
+            "tvlUsd": "585815160.7083021879872463622702012",
+            "feesUsd": "445.1090664623852327034380306821416",
+            "volumeUsd": "890218.1329247704654068760613642831",
+            "__typename": "PoolDayData"
+        },
+        "vault": {
+            "id": "0xad57d7d39a487c04a44d3522b910421888fb9c6d",
+            "vaultAddress": "0xad57d7d39a487c04a44d3522b910421888fb9c6d",
+            "__typename": "Vault"
+        },
+        "__typename": "Pool"
+    }
+}
