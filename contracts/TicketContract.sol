@@ -14,14 +14,14 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
     address public admin;
     uint256 public decimals;
     address public baseToken;
-    address public vaultAddress;
     uint256 public tokenBalances;
+    address public valutAddress;
+    
     //=======================Structs============================
     struct TokenInfo {
         address tokenAddress; // Suppoted token in the contract
         address poolIdWithHoney; // The pool ID for token to Swap
     }
-
     struct UserInfo {
         uint256 ticketBalance; // The tickets that Each user has.
         uint256 lastDepositedTime; // Last deposited Timestamp.
@@ -47,17 +47,19 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
     event SetTeamAddress(address teamAddr);
     event SetAdmin(address newAdmin);
     event SetRouterAddress(address _routerAddress);
+
     constructor() Ownable(msg.sender){
         decimals = 10**18;
         ticketPrice = 1 * decimals;
         teamPercentage = (ticketPrice * 1000) / 10000;
         ozFees = (5000 * decimals) / 10000;
-        teamAddress = 0x9d58dbb94b3F04497b2a0b694Aa995CC5628af83;
-        admin = 0x9d58dbb94b3F04497b2a0b694Aa995CC5628af83;
-        baseToken = 0x0E4aaF1351de4c0264C5c7056Ef3777b41BD8e03;
-        vaultAddress = 0x2Ac2FB5AC85e98d3044b0BF0DD04e127964EBb16;  
+        teamAddress = 0x21e2C0AFd058A89FCf7caf3aEA3cB84Ae977B73D;
+        admin = 0x21e2C0AFd058A89FCf7caf3aEA3cB84Ae977B73D;
+        baseToken = 0x21e2C0AFd058A89FCf7caf3aEA3cB84Ae977B73D;
+        valutAddress = 0xb99d6Bb136764C110bA4229008170D1D3C073Abd;
     }
-// ================ View Functions ================
+    
+    
     function getPrice(address _quoteToken) public view returns (uint256 pricePerToken) {
         require(_quoteToken != address(0), "Invalid token address");
         require(baseToken != address(0), "Base token not set");
@@ -76,7 +78,6 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
             return amountOfTokenPerTicket;
         }
     }
-// ================ Token Functions ================
     function addToken(address _token,address poolIdWithHoney) external onlyOwner {
         require(_token != address(0), "Invalid token address");
         require(poolIdWithHoney != address(0), "Invalid pool address");
@@ -96,16 +97,17 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
 
         delete supportedTokens[_token];
     }
-//================= Swap functions ==================    
-    function swapTokenForHoney(address _token, address _poolIdWithHoney) internal  {
+    function swapTokenForHoney(address _token, address _poolIdWithHoney) public {
         token = IERC20(_token);
 
         // Add your swap logic here
         // This should integrate with BEX for token to HONEY swaps
     }
-    function swapHoneyForBera(uint256 _amount) internal {}
+    function swapHoneyForBera(uint256 _amount) public {
+        //Logic to swap for Honey to actual bera
+    }
 
-// ================= Purchase function===============
+
     function purchaseTicket(address _token,uint256 numOfTicket) external payable whenNotPaused nonReentrant {
         require(numOfTicket > 0, "Invalid amount");
         uint256 ticketAmount = (numOfTicket * ticketPrice) / decimals;
@@ -114,19 +116,17 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         uint256 totalAmount = ticketAmount + teamAmount + ozFee;
         if (_token == baseToken) {
             token = IERC20(_token);
-            bool success = token.transferFrom(msg.sender, address(this), totalAmount);
+            bool success = token.transferFrom(msg.sender, valutAddress, totalAmount);
             require(success, "Purchase token failed");
         } else {
             swapTokenForHoney(_token, supportedTokens[_token].poolIdWithHoney);
         }
-
         feesTransfer(teamAmount, ozFee);
         userInfo[msg.sender].ticketBalance += numOfTicket;
         userInfo[msg.sender].lastDepositedTime = block.timestamp;
         
         emit TicketPurchased(msg.sender, numOfTicket, _token);
     }
-
     function feesTransfer(uint256 teamAmnt,uint256 ozFeeAmnt) internal {
         token = IERC20(baseToken);
         bool teamTransfer = token.transfer(teamAddress, teamAmnt);
@@ -138,7 +138,7 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
 
         emit FeesTransfered(teamAmnt, baseToken);
     }
-    // ================ Setter Functions ================
+        // ================ Setter Functions ================
     function setAdmin(address newAdmin) external onlyOwner {
         require(newAdmin != address(0), "Invalid admin address");
         admin = newAdmin;
@@ -159,7 +159,6 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         teamAddress = newTeamAddress;
         emit SetTeamAddress(newTeamAddress);
     }
-     // ================ Pausing & Unpausing Functions ================
     function pause() external onlyOwner {
         _pause();
     }
