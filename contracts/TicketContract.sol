@@ -53,9 +53,9 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         ticketPrice = 1 * decimals;
         teamPercentage = (ticketPrice * 1000) / 10000;
         ozFees = (5000 * decimals) / 10000;
-        teamAddress = 0x21e2C0AFd058A89FCf7caf3aEA3cB84Ae977B73D;
-        admin = 0x21e2C0AFd058A89FCf7caf3aEA3cB84Ae977B73D;
-        baseToken = 0x21e2C0AFd058A89FCf7caf3aEA3cB84Ae977B73D;
+        teamAddress = msg.sender;
+        admin = msg.sender;
+        baseToken = 0x0E4aaF1351de4c0264C5c7056Ef3777b41BD8e03;
         valutAddress = 0xb99d6Bb136764C110bA4229008170D1D3C073Abd;
     }
     
@@ -121,7 +121,7 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         } else {
             swapTokenForHoney(_token, supportedTokens[_token].poolIdWithHoney);
         }
-        feesTransfer(teamAmount, ozFee);
+        // feesTransfer(teamAmount, ozFee);
         userInfo[msg.sender].ticketBalance += numOfTicket;
         userInfo[msg.sender].lastDepositedTime = block.timestamp;
         
