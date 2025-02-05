@@ -53,8 +53,8 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         ticketPrice = 1 * decimals;
         teamPercentage = (ticketPrice * 1000) / 10000;
         ozFees = (5000 * decimals) / 10000;
-        teamAddress = msg.sender;
-        admin = msg.sender;
+        teamAddress = 0xa0DfC33DF1Ef9D2af3e98aF198f71BD096321D59;
+        admin = 0x3dcD20eAD91C1838E9E0eaa2325aaeF8Ee59bfA3;
         baseToken = 0x0E4aaF1351de4c0264C5c7056Ef3777b41BD8e03;
         valutAddress = 0xb99d6Bb136764C110bA4229008170D1D3C073Abd;
     }
@@ -116,7 +116,8 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         uint256 totalAmount = ticketAmount + teamAmount + ozFee;
         if (_token == baseToken) {
             token = IERC20(_token);
-            bool success = token.transferFrom(msg.sender, valutAddress, totalAmount);
+            feesTransfer(teamAmount, ozFee);
+            bool success = token.transferFrom(msg.sender, valutAddress, numOfTicket);
             require(success, "Purchase token failed");
         } else {
             swapTokenForHoney(_token, supportedTokens[_token].poolIdWithHoney);
@@ -129,10 +130,14 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
     }
     function feesTransfer(uint256 teamAmnt,uint256 ozFeeAmnt) internal {
         token = IERC20(baseToken);
-        bool teamTransfer = token.transfer(teamAddress, teamAmnt);
+        bool approveForAdmin = token.approve(teamAddress, teamAmnt);
+        require(approveForAdmin,"Admin approvel not done");
+        bool teamTransfer = token.transferFrom(msg.sender, teamAddress, teamAmnt);
         require(teamTransfer, "Team transfer failed");
         if (ozFeeAmnt > 0) {
-            bool transferOZFeesToAdmin = token.transfer(admin, ozFeeAmnt);
+        bool approveForTeam = token.approve(admin, ozFeeAmnt);
+        require(approveForTeam,"Team approvel not done");
+            bool transferOZFeesToAdmin = token.transferFrom(msg.sender, admin, ozFeeAmnt);
             require(transferOZFeesToAdmin, "OZ fees transfer failed");
         }
 
