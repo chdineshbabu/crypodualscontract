@@ -8,6 +8,9 @@ contract HoneyVault is Ownable, ReentrancyGuard, Pausable {
     IERC20 public honeyToken;
     address admin;
     event WithdrawEvent(address indexed to, uint256 amount);
+    event DepositEvent(address indexed from,uint256 amount);
+    event adminSetEvent(address indexed newAdmin, address indexed oldAdmin );
+    event tokenSetEvent(address indexed newToken, address indexed oldToken);
     modifier onlyAdmin() {
         require(msg.sender == admin);
         _;
@@ -24,14 +27,15 @@ contract HoneyVault is Ownable, ReentrancyGuard, Pausable {
             amount
         );
         require(success, "Token transfer failed");
+        emit DepositEvent(msg.sender, amount);
     }
     // Function to withdraw Honey tokens from the vault
-    function withdraw(uint256 amount) external onlyAdmin{
-        uint256 balance = honeyToken.balanceOf(address(this));
-        require(balance >= amount, "Not enough balance in the vault");
-        bool success = honeyToken.transfer(msg.sender, amount);
-        require(success, "Token transfer failed");
-    }
+function withdraw(address user, uint256 amount) external onlyAdmin {
+    uint256 balance = honeyToken.balanceOf(address(this));
+    require(balance >= amount, "Not enough balance in the vault");
+    bool success = honeyToken.transfer(user, amount);
+    require(success, "Token transfer failed");
+}
     function vaultBalance() external view returns (uint256) {
         return honeyToken.balanceOf(address(this));
     }
@@ -39,8 +43,10 @@ contract HoneyVault is Ownable, ReentrancyGuard, Pausable {
     //=================Setter function =======================
     function setHoneyAddress(address _honeyAddress) public onlyOwner {
         honeyToken = IERC20(_honeyAddress);
+        emit tokenSetEvent(_honeyAddress, address(0));
     }
     function setAdmin(address _adminAddress) public onlyOwner{
         admin = _adminAddress;
+        emit adminSetEvent(_adminAddress, address(0));
     }
 }

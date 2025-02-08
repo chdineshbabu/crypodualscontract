@@ -47,16 +47,18 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
     event SetTeamAddress(address teamAddr);
     event SetAdmin(address newAdmin);
     event SetRouterAddress(address _routerAddress);
+    event setVaultAddresss(address _vaultAddress);
+    event setBaseTokens(address _newBaseTokenAddress);
 
     constructor() Ownable(msg.sender){
         decimals = 10**18;
         ticketPrice = 1 * decimals;
         teamPercentage = (ticketPrice * 1000) / 10000;
         ozFees = (5000 * decimals) / 10000;
-        teamAddress = 0xa0DfC33DF1Ef9D2af3e98aF198f71BD096321D59;
-        admin = 0x3dcD20eAD91C1838E9E0eaa2325aaeF8Ee59bfA3;
+        teamAddress = msg.sender;
+        admin = msg.sender;
         baseToken = 0x0E4aaF1351de4c0264C5c7056Ef3777b41BD8e03;
-        valutAddress = 0xb99d6Bb136764C110bA4229008170D1D3C073Abd;
+        valutAddress = 0xb24c71B3dc4c3db8F9234b8129c94703a2f989af;
     }
     
     
@@ -148,6 +150,16 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         require(newAdmin != address(0), "Invalid admin address");
         admin = newAdmin;
         emit SetAdmin(newAdmin);
+    }
+    function setVaultAddress(address newVault) external onlyOwner{
+        require(newVault != address(0),"Invalid Vault address");
+        valutAddress = newVault;
+        emit setVaultAddresss(newVault);
+    }
+    function setBaseToken(address newBaseToken) external onlyOwner{
+        require(newBaseToken != address(0));
+        baseToken = newBaseToken;
+        emit setBaseTokens(newBaseToken);
     }
     function setOZFees(uint256 amount) external onlyOwner {
         require(amount > 0, "Invalid OZ fees");
