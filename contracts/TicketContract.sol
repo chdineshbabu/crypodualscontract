@@ -10,11 +10,9 @@ import "hardhat/console.sol";
 interface IWBERA is IERC20 {
     function deposit() external payable;
 }
-
 interface IAsset {
     // solhint-disable-previous-line no-empty-blocks
 }
-
 interface IVault {
     function swap(
         SingleSwap memory singleSwap,
