@@ -29,11 +29,11 @@ contract HoneyVault is Ownable, ReentrancyGuard, Pausable {
         _;
     }
 
-    /**
-     * @dev Constructor initializes the contract with the given token address and sets the deployer as the owner and admin.
-     * @param _honeyToken Address of the ERC20 token contract.
-     */
-    constructor() Ownable(msg.sender) {
+    // /**
+    //  * @dev Constructor initializes the contract with the given token address and sets the deployer as the owner and admin.
+    //  * @param _honeyToken Address of the ERC20 token contract.
+    //  */
+    constructor() Ownable() {
         // honeyToken = IERC20(_honeyToken);
         honeyToken = IERC20(0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce);
         admin = msg.sender;

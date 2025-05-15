@@ -101,7 +101,7 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         // address _swapQuoteQuery,
         // address _WETH,
         // bytes32 _BeraPoolId,
-    ) Ownable(msg.sender) {
+    ) Ownable() {
         decimals = 10**18;
         ticketPrice = 1 * decimals;
         teamPercentage = (ticketPrice * 1000) / 10000;
