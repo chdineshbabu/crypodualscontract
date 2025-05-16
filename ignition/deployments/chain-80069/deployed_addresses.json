@@ -1,6 +1,5 @@
 {
-  "DeployModule#HoneyVault": "0x978f955c7a8DF1d0F76Fe0E6ceF5C4266bC8388F",
-  "DeployModule#SwapQuoteQuery": "0xfb39394CA78d04AE4bEEda0971B79996B991D518",
-  "DeployModule#TicketContract": "0x1dDEfC5b63BBbc760ccae3f1afdD4D4ba02392fb",
-  "DeployModule#TokenSwapper": "0x6123Cb6065507c667A87D972Bc6a18AA7201B0E3"
+  "DeployModule#HoneyVault": "0x97B4e2bE6660FD642018E65e2133Aec4043736dd",
+  "DeployModule#SwapQuoteQuery": "0x635f672C1f586439500e76Dc6f5f3Cf9636E39b9",
+  "DeployModule#TicketContract": "0x6FEd981b0A04089210f9a7F2876ECBD40F486699"
 }

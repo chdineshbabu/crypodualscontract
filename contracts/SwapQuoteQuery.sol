@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @title SwapQuoteQuery
  * @dev Fetches token pool details and calculates token swap prices.
  */
+
 interface IPrice {
     function getPoolTokens(bytes32 poolId)
         external
@@ -20,15 +21,17 @@ interface IPrice {
 
 contract SwapQuoteQuery {
     IPrice public vault;
-    address public WBERA = 0x6969696969696969696969696969696969696969;
-    address public constant HONEY = 0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce;
+    address public WBERA;
+    address public  HONEY;
 
     /**
      * @dev Constructor initializes the vault address.
      */
-    constructor() {
-        // vault = IPrice(_vaultAddress);
-        vault = IPrice(0x4Be03f781C497A489E3cB0287833452cA9B9E80B);
+    constructor(address _honey, address _bera, address _vaultAddress) {
+        vault = IPrice(_vaultAddress);
+        WBERA =_bera;
+        HONEY = _honey;
+        // vault = IPrice(0x708cA656b68A6b7384a488A36aD33505a77241FE);
     }
 
     /**

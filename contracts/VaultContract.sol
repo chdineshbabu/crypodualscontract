@@ -29,13 +29,9 @@ contract HoneyVault is Ownable, ReentrancyGuard, Pausable {
         _;
     }
 
-    // /**
-    //  * @dev Constructor initializes the contract with the given token address and sets the deployer as the owner and admin.
-    //  * @param _honeyToken Address of the ERC20 token contract.
-    //  */
-    constructor() Ownable() {
-        // honeyToken = IERC20(_honeyToken);
-        honeyToken = IERC20(0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce);
+    constructor(address _honeyToken) Ownable() {
+        honeyToken = IERC20(_honeyToken);
+        // honeyToken = IERC20(0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce);
         admin = msg.sender;
     }
 
@@ -43,6 +39,8 @@ contract HoneyVault is Ownable, ReentrancyGuard, Pausable {
      * @dev Allows users to deposit Honey tokens into the vault.
      * @param amount Amount of tokens to deposit.
      */
+
+     
     function deposit(uint256 amount) external whenNotPaused {
         require(amount > 0, "Amount must be greater than zero");
         bool success = honeyToken.transferFrom(msg.sender, address(this), amount);

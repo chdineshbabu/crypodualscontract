@@ -1,32 +1,37 @@
 const { buildModule } = require("@nomicfoundation/hardhat-ignition/modules");
+const bepoliaDetails = require("./bepoliaDetails.json");
 
 module.exports = buildModule("DeployModule", (m) => {
     // Deploy SwapQuoteQuery first as it's used by TicketContract
-    const swapQuoteQuery = m.contract("SwapQuoteQuery", [], {
-        from: m.getAccount(0)
-    });
-
-    // Deploy TokenSwapper
-    const tokenSwapper = m.contract("TokenSwapper", [
-        "0x4Be03f781C497A489E3cB0287833452cA9B9E80B", // vault address
-        "0x6969696969696969696969696969696969696969"  // WETH address
+    const swapQuoteQuery = m.contract("SwapQuoteQuery", [
+        bepoliaDetails.honey, // honey address
+        bepoliaDetails.bera, // bera address
+        bepoliaDetails.vault // vault address
     ], {
         from: m.getAccount(0)
     });
 
     // Deploy HoneyVault (was VaultContract)
-    const honeyVault = m.contract("HoneyVault", [], {
+    const honeyVault = m.contract("HoneyVault", [
+        bepoliaDetails.honey // honey token address
+    ], {
         from: m.getAccount(0)
     });
 
     // Deploy TicketContract with all its dependencies
-    const ticketContract = m.contract("TicketContract", [], {
+    const ticketContract = m.contract("TicketContract", [
+        bepoliaDetails.honey, // base token
+        honeyVault, // vault address
+        swapQuoteQuery, // swap quote query address
+        bepoliaDetails.bera, // WETH address
+        bepoliaDetails.beraPoolId, // Bera pool ID
+        bepoliaDetails.vault // vault address
+    ], {
         from: m.getAccount(0)
     });
 
     return {
         swapQuoteQuery,
-        tokenSwapper,
         honeyVault,
         ticketContract
     };

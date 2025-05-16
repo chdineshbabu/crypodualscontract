@@ -96,11 +96,12 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
     constructor(
         // address _teamAddress,
         // address _admin,
-        // address _baseToken,
-        // address _valutAddress,
-        // address _swapQuoteQuery,
-        // address _WETH,
-        // bytes32 _BeraPoolId,
+        address _baseToken,
+        address _valutAddress,
+        address _swapQuoteQuery,
+        address _WETH,
+        bytes32 _BeraPoolId,
+        address _vault
     ) Ownable() {
         decimals = 10**18;
         ticketPrice = 1 * decimals;
@@ -109,22 +110,21 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
         //HardCoded values
         teamAddress = msg.sender;
         admin = msg.sender;
-        baseToken = 0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce;
-        valutAddress = 0xfb39394CA78d04AE4bEEda0971B79996B991D518;
-        swapQuoteQuery = SwapQuoteQuery(
-            0x2a8DC049A1D9378628e374E24ADd381d85F576c6  
-        );
-        vault = IVault(0x4Be03f781C497A489E3cB0287833452cA9B9E80B);
-        WETH = 0x6969696969696969696969696969696969696969;
-        BeraPoolId = 0x2c4a603a2aa5596287a06886862dc29d56dbc354000200000000000000000002;
+        // baseToken = 0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce;
+        // valutAddress = 0x42F945224afEA1019ADF1d7Be020450f4Df529C7;
+        // swapQuoteQuery = SwapQuoteQuery(
+        //     0x409dD95463CBdc9F19FEea04da6fbA82fD15370e  
+        // );
+        // vault = IVault(0x4Be03f781C497A489E3cB0287833452cA9B9E80B);
+        // WETH = 0x6969696969696969696969696969696969696969;
+        // BeraPoolId = 0x2c4a603a2aa5596287a06886862dc29d56dbc354000200000000000000000002;
 
-        // teamAddress = _teamAddress;
-        // admin = _admin;
-        // baseToken = _baseToken;
-        // valutAddress = _valutAddress;
-        // swapQuoteQuery = SwapQuoteQuery(_swapQuoteQuery);
-        // WETH = _WETH;
-        // BeraPoolId = _BeraPoolId;
+        baseToken = _baseToken;
+        valutAddress = _valutAddress;
+        swapQuoteQuery = SwapQuoteQuery(_swapQuoteQuery  );
+        vault = IVault(_vault);
+        WETH = _WETH;
+        BeraPoolId = _BeraPoolId;
     }
 
     /**
