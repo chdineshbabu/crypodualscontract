@@ -6,28 +6,56 @@ require("dotenv").config();
 module.exports = {
   solidity: {
     compilers: [
-      { version: "0.8.26" },
-      { version: "0.8.20" }
+      {
+        version: "0.8.26",
+        settings: {
+          optimizer: { enabled: true, runs: 50 },
+          viaIR: true,
+        },
+      },
+      {
+        version: "0.8.22",
+        settings: {
+          optimizer: { enabled: true, runs: 50 },
+          viaIR: true,
+        },
+      },
     ]
   },
   networks: {
-    bepolis: {
+    berachain_bepolia: {
       url: "https://bepolia.rpc.berachain.com/",
       chainId: 80069,
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      saveDeployments: true,
+    },
+    berachain: {
+      url: "https://rpc.berachain.com",
+      chainId: 80094,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
   },
   etherscan: {
     apiKey: {
-      bepolis: "not-needed" // Berachain doesn't need an API key for verification
+      berachain_bepolia: "berachain_bepolia",
+      berachain: "not-needed" // Berachain mainnet doesn't need an API key for verification
     },
     customChains: [
       {
-        network: "bepolis",
+        network: "berachain_bepolia",
         chainId: 80069,
         urls: {
-          apiURL: "https://bepolia.rpc.berachain.com/",
-          browserURL: "https://bepolia.berachain.com"
+          apiURL:
+            "https://api.routescan.io/v2/network/testnet/evm/80069/etherscan",
+          browserURL: "https://bepolia.beratrail.io",
+        },
+      },
+      {
+        network: "berachain",
+        chainId: 80094,
+        urls: {
+          apiURL: "https://api.routescan.io/v2/network/mainnet/evm/80094/etherscan",
+          browserURL: "https://berachain.com"
         }
       }
     ]
