@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IUniswapV2.sol";
 
-contract TicketContract is Ownable, ReentrancyGuard, Pausable {
+contract TicketContract is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
     //========================Variables=========================
-    IERC20 public token;
+    IERC20 public baseTokenContract;
     IUniswapV2Router02 public uniswapRouter;
-    address public immutable WETH;
+    address public WETH;
     uint256 public ticketPrice;
     uint256 public teamPercentage;
     uint256 public ozFees;
@@ -35,7 +36,7 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
     mapping(address => TokenInfo) public supportedTokens;
     mapping(address => UserInfo) public userInfo;
     
-    //=================Events=======================
+    //=================Events======================
     event FeesTransfered(uint256 teamAmount, address token);
     event TicketPurchased(
         address indexed user,
@@ -54,12 +55,21 @@ contract TicketContract is Ownable, ReentrancyGuard, Pausable {
     event SetBaseTokens(address _newBaseTokenAddress);
     event SetSlippageTolerance(uint256 _slippageTolerance);
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address _baseToken,
         address _valutAddress,
         address _WETH,
         address _uniswapRouter
-    ) Ownable() {
+    ) public initializer {
+        __Ownable_init();
+        __ReentrancyGuard_init();
+        __Pausable_init();
+        
         decimals = 10**18;
         ticketPrice = 1 * decimals;
         teamPercentage = (ticketPrice * 1000) / 10000;

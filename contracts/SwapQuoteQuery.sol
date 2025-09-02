@@ -2,6 +2,8 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./interfaces/IUniswapV2.sol";
 
 /**
@@ -9,20 +11,27 @@ import "./interfaces/IUniswapV2.sol";
  * @dev Fetches token swap prices using UniswapV2 router with HONEY as the base token.
  */
 
-contract SwapQuoteQuery {
+contract SwapQuoteQuery is Initializable, OwnableUpgradeable {
     IUniswapV2Router02 public router;
     address public WBERA;
     address public HONEY;
     address public factory;
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     /**
      * @dev Constructor initializes the router, factory, and token addresses.
      */
-    constructor(
+    function initialize(
         address _honey, 
         address _bera, 
         address _routerAddress
-    ) {
+    ) public initializer {
+        __Ownable_init();
+        
         router = IUniswapV2Router02(_routerAddress);
         factory = router.factory();
         WBERA = _bera;

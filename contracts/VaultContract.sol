@@ -2,16 +2,17 @@
 pragma solidity ^0.8.22;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @title HoneyVault
  * @dev This contract allows users to deposit and withdraw Honey tokens.
  * It includes security features such as Ownable, ReentrancyGuard, and Pausable.
  */
-contract HoneyVault is Ownable, ReentrancyGuard, Pausable {
+contract HoneyVault is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
     IERC20 public honeyToken;
     address public admin;
 
@@ -29,7 +30,16 @@ contract HoneyVault is Ownable, ReentrancyGuard, Pausable {
         _;
     }
 
-    constructor(address _honeyToken) Ownable() {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address _honeyToken) public initializer {
+        __Ownable_init();
+        __ReentrancyGuard_init();
+        __Pausable_init();
+        
         honeyToken = IERC20(_honeyToken);
         // honeyToken = IERC20(0xFCBD14DC51f0A4d49d5E53C2E0950e0bC26d0Dce);
         admin = msg.sender;

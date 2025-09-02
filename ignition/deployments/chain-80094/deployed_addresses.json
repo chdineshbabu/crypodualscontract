@@ -1,3 +1,6 @@
 {
-  "TicketContractDeployModule#TicketContract": "0xC1D6CC9dfF98d20D789f9B9215d9B83D719981CC"
+  "VaultDeployModule#VaultProxyAdmin": "0x5AA2f7506952a612064B4dfc84BD7c843c5b6Bc3",
+  "VaultDeployModule#HoneyVaultImplementation": "0xB3728CC37AF0dE723B686Bf64937A26d5c6d8260",
+  "VaultDeployModule#HoneyVaultProxy": "0xb0B6B80bE59a98722c9988FA3aaF551684Be7603",
+  "VaultDeployModule#HoneyVaultAtProxy": "0xb0B6B80bE59a98722c9988FA3aaF551684Be7603"
 }
