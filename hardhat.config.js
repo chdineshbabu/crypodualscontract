@@ -2,6 +2,17 @@ require("@nomicfoundation/hardhat-toolbox");
 require("@nomicfoundation/hardhat-ignition");
 require("dotenv").config();
 
+// Deployer key + optional custom RPCs come from .env (never commit real values).
+// Public RPCs are rate-limited fallbacks — set RH_*_RPC_URL to your Dwellir/Alchemy
+// endpoint for anything beyond a quick test.
+const {
+  PRIVATE_KEY,
+  RH_MAINNET_RPC_URL,
+  RH_TESTNET_RPC_URL,
+} = process.env;
+
+const accounts = PRIVATE_KEY ? [PRIVATE_KEY] : [];
+
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
@@ -20,45 +31,52 @@ module.exports = {
           viaIR: true,
         },
       },
-    ]
+    ],
   },
   networks: {
-    berachain_bepolia: {
-      url: "https://bepolia.rpc.berachain.com/",
-      chainId: 80069,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    // Robinhood Chain mainnet — Arbitrum L2, native gas token is ETH.
+    robinhood: {
+      url: RH_MAINNET_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
+      chainId: 4663,
+      accounts,
       saveDeployments: true,
     },
-    berachain: {
-      url: "https://rpc.berachain.com",
-      chainId: 80094,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    // Robinhood Chain testnet.
+    robinhood_testnet: {
+      url: RH_TESTNET_RPC_URL || "https://rpc.testnet.chain.robinhood.com",
+      chainId: 46630,
+      accounts,
+      saveDeployments: true,
     },
   },
+  // Contract verification via Blockscout (Robinhood Chain uses Blockscout, not
+  // Etherscan). The apiKey value is ignored by Blockscout but must be non-empty.
   etherscan: {
     apiKey: {
-      berachain_bepolia: "berachain_bepolia",
-      berachain: "not-needed" // Berachain mainnet doesn't need an API key for verification
+      robinhood: "blockscout",
+      robinhood_testnet: "blockscout",
     },
     customChains: [
       {
-        network: "berachain_bepolia",
-        chainId: 80069,
+        network: "robinhood",
+        chainId: 4663,
         urls: {
-          apiURL:
-            "https://api.routescan.io/v2/network/testnet/evm/80069/etherscan",
-          browserURL: "https://bepolia.beratrail.io",
+          apiURL: "https://robinhoodchain.blockscout.com/api",
+          browserURL: "https://robinhoodchain.blockscout.com",
         },
       },
       {
-        network: "berachain",
-        chainId: 80094,
+        network: "robinhood_testnet",
+        chainId: 46630,
         urls: {
-          apiURL: "https://api.routescan.io/v2/network/mainnet/evm/80094/etherscan",
-          browserURL: "https://berachain.com"
-        }
-      }
-    ]
-  }
+          apiURL: "https://explorer.testnet.chain.robinhood.com/api",
+          browserURL: "https://explorer.testnet.chain.robinhood.com",
+        },
+      },
+    ],
+  },
+  // Blockscout handles verification; Sourcify off to avoid a second prompt.
+  sourcify: {
+    enabled: false,
+  },
 };
-

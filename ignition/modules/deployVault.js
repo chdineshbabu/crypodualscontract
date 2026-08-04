@@ -1,5 +1,6 @@
 const { buildModule } = require("@nomicfoundation/hardhat-ignition/modules");
-const bepoliaDetails = require("./bepoliaDetails.json");
+const { getDetails } = require("./_details");
+const details = getDetails();
 
 module.exports = buildModule("VaultDeployModule", (m) => {
     // Deploy a dedicated ProxyAdmin for the vault
@@ -9,36 +10,31 @@ module.exports = buildModule("VaultDeployModule", (m) => {
         { id: "VaultProxyAdmin", from: m.getAccount(0) }
     );
 
-    // Deploy HoneyVault implementation (upgradeable, uses initialize)
-    const vaultImplementation = m.contract("HoneyVault", [], {
-        id: "HoneyVaultImplementation",
+    // Deploy DuelsVault implementation (upgradeable, uses initialize)
+    const vaultImplementation = m.contract("DuelsVault", [], {
+        id: "DuelsVaultImplementation",
         from: m.getAccount(0),
         // Ensure sequential txs to avoid RPC in-flight limits
         after: [proxyAdmin]
     });
 
-    // Deploy TransparentUpgradeableProxy pointing to the HoneyVault implementation
+    // Deploy the proxy, initializing ATOMICALLY via the constructor `_data` so there is no
+    // uninitialized-proxy window for an attacker to front-run initialize().
+    const initVault = m.encodeFunctionCall(vaultImplementation, "initialize", [
+        details.baseToken,
+    ]);
     const vaultProxy = m.contract(
         "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol:TransparentUpgradeableProxy",
-        [vaultImplementation, proxyAdmin, "0x"],
-        { id: "HoneyVaultProxy", from: m.getAccount(0), after: [vaultImplementation] }
+        [vaultImplementation, proxyAdmin, initVault],
+        { id: "DuelsVaultProxy", from: m.getAccount(0), after: [vaultImplementation] }
     );
 
-    // Interact with the implementation via the proxy and initialize it
-    const honeyVault = m.contractAt("HoneyVault", vaultProxy, { id: "HoneyVaultAtProxy" });
-    m.call(
-        honeyVault,
-        "initialize",
-        [bepoliaDetails.honey],
-        { id: "InitializeHoneyVault", from: m.getAccount(0), after: [vaultProxy] }
-    );
+    const duelsVault = m.contractAt("DuelsVault", vaultProxy, { id: "DuelsVaultAtProxy" });
 
     return {
         proxyAdmin,
         vaultImplementation,
         vaultProxy,
-        honeyVault
+        duelsVault
     };
 });
-
-

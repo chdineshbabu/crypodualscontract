@@ -1,0 +1,22 @@
+{
+  "mainnet": {
+    "_network": "Robinhood Chain mainnet (chainId 4663)",
+    "_dex": "Uniswap V3. 'router' is SwapRouter02 (passed to TicketContract.initialize). 'quoter' is QuoterV2 (off-chain use by the backend to size amountInMaximum). 'factory' is the V3 factory.",
+    "baseToken": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "router": "0xcaf681a66d020601342297493863e78c959e5cb2",
+    "quoter": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+    "factory": "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
+    "vault": "0x0000000000000000000000000000000000000000"
+  },
+  "testnet": {
+    "_network": "Robinhood Chain testnet (chainId 46630)",
+    "_note": "PLACEHOLDERS. Testnet USDG/WETH/Uniswap-V3 addresses are not published yet (as of 2026-08). Fill from explorer.testnet.chain.robinhood.com before deploying to robinhood_testnet. Zero addresses will make initialize() revert on purpose, to prevent a silent misconfigured deploy.",
+    "baseToken": "0x0000000000000000000000000000000000000000",
+    "weth": "0x0000000000000000000000000000000000000000",
+    "router": "0x0000000000000000000000000000000000000000",
+    "quoter": "0x0000000000000000000000000000000000000000",
+    "factory": "0x0000000000000000000000000000000000000000",
+    "vault": "0x0000000000000000000000000000000000000000"
+  }
+}

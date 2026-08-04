@@ -1,59 +1,93 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
+
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./interfaces/IUniswapV2.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "./interfaces/IUniswapV3.sol";
 
+/**
+ * @title TicketContract (Uniswap V3)
+ * @notice Ticket-purchase contract for the Crypto Duels game on Robinhood Chain.
+ *
+ * Payment model — EXACT OUTPUT:
+ *  - Tickets are priced in a base stablecoin (USDG). A purchase must deliver EXACTLY
+ *    `totalAmount` base tokens (ticket + team + oz fee).
+ *  - Paying in the base token: transferred directly.
+ *  - Paying in native ETH or an allowlisted ERC-20: the contract swaps the input for
+ *    exactly `totalAmount` base via Uniswap V3 `SwapRouter02.exactOutput`, capped at a
+ *    caller-supplied `amountInMaximum`, and refunds the unspent input.
+ *
+ * Why the caller supplies the quote/bounds:
+ *  - Uniswap V3's QuoterV2 is not a `view` function (it reverts to return its result),
+ *    so it cannot be called cheaply on-chain like V2's `getAmountsOut`. The backend
+ *    quotes off-chain (QuoterV2 staticcall) and passes `amountInMaximum`, the V3 `path`,
+ *    and a `deadline` into `purchaseTicket`. This is the standard V3 integration pattern.
+ *
+ * Hardening:
+ *  - SafeERC20 everywhere (tolerates non-standard/meme ERC-20s that don't return bool).
+ *  - Strict allowlist: only `baseToken`, native ETH, or `addToken`-ed tokens are accepted.
+ *  - Optional Chainlink deviation bound (off by default) to reject swaps whose effective
+ *    price is manipulated too far from the oracle.
+ *  - NOTE: fee-on-transfer / rebasing input tokens are NOT supported by Uniswap V3
+ *    exact-output; do not allowlist them.
+ *
+ * Upgradeable via a transparent proxy (fresh deployment on Robinhood Chain).
+ */
 contract TicketContract is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
-    //========================Variables=========================
-    IERC20 public baseTokenContract;
-    IUniswapV2Router02 public uniswapRouter;
-    address public WETH;
-    uint256 public ticketPrice;
-    uint256 public teamPercentage;
-    uint256 public ozFees;
+    using SafeERC20 for IERC20;
+
+    // ======================== State ========================
+    address public baseToken;              // base stablecoin (USDG)
+    address public WETH;                    // wrapped native (for ETH swaps / feed lookup)
+    IV3SwapRouter public swapRouter;        // Uniswap V3 SwapRouter02
+
+    uint256 public ticketPrice;             // price per ticket, in base-token units (10**baseDecimals)
+    uint256 public teamPercentage;          // team cut per ticket, base-token units
+    uint256 public ozFees;                  // oz fee per ticket, base-token units
     address public teamAddress;
     address public admin;
-    uint256 public decimals;
-    address public baseToken;
-    uint256 public tokenBalances;
-    address public valutAddress;
-    uint256 public slippageTolerance = 50; // 0.5% 
-    
-    //=======================Structs============================
-    // Keep extensibility for future metadata if needed
+    uint256 public baseUnit;                // 10**baseToken.decimals() — one whole base token (e.g. 1e6 for USDG)
+    uint256 public ticketScale;             // numOfTicket scaling factor (1e18 == 1 ticket)
+    address public valutAddress;            // vault (receives the ticket portion)
+    uint256 public slippageTolerance;       // advisory bps; the backend uses it to size amountInMaximum
+
+    // Optional Chainlink oracle bound (off while maxOracleDeviationBps == 0)
+    mapping(address => address) public priceFeeds; // token => Chainlink USD feed
+    uint256 public maxOracleDeviationBps;          // e.g. 500 = 5%; 0 disables the check
+    uint256 public maxOracleStaleness;             // max age (seconds) of a Chainlink round before it is rejected
+
+    // ======================== Structs ========================
     struct TokenInfo { address tokenAddress; }
-    
-    struct UserInfo {
-        uint256 ticketBalance; 
-        uint256 lastDepositedTime; 
-    }
-    
-    // ================ Mappings ================
+    struct UserInfo { uint256 ticketBalance; uint256 lastDepositedTime; }
+
+    // ======================== Mappings ========================
     mapping(address => TokenInfo) public supportedTokens;
     mapping(address => UserInfo) public userInfo;
-    
-    //=================Events======================
-    event FeesTransfered(uint256 teamAmount, address token);
-    event TicketPurchased(
-        address indexed user,
-        uint256 numOfTicket,
-        address token
-    );
-    event SetUserBalance(address indexed user, uint256 amount);
+
+    // ======================== Events ========================
+    event TicketPurchased(address indexed user, uint256 numOfTicket, address token);
+    event PaymentRefunded(address indexed user, address token, uint256 amount);
     event SetTokenAddress(address tokenAddr);
+    event RemoveTokenAddress(address tokenAddr);
     event SetTicketprice(uint256 price);
     event SetTeamPercentage(uint256 teamPercent);
     event SetOZFees(uint256 ozFees);
     event SetTeamAddress(address teamAddr);
     event SetAdmin(address newAdmin);
-    event SetRouterAddress(address _routerAddress);
-    event SetVaultAddress(address _vaultAddress);
-    event SetBaseTokens(address _newBaseTokenAddress);
-    event SetSlippageTolerance(uint256 _slippageTolerance);
+    event SetRouterAddress(address routerAddress);
+    event SetVaultAddress(address vaultAddress);
+    event SetBaseTokens(address newBaseTokenAddress);
+    event SetSlippageTolerance(uint256 slippageTolerance);
+    event SetPriceFeed(address indexed token, address feed);
+    event SetMaxOracleDeviation(uint256 bps);
+    event SetMaxOracleStaleness(uint256 maxAge);
+    event RescueERC20(address indexed token, address indexed to, uint256 amount);
+    event RescueETH(address indexed to, uint256 amount);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -64,684 +98,325 @@ contract TicketContract is Initializable, OwnableUpgradeable, ReentrancyGuardUpg
         address _baseToken,
         address _valutAddress,
         address _WETH,
-        address _uniswapRouter
+        address _swapRouter
     ) public initializer {
         __Ownable_init();
         __ReentrancyGuard_init();
         __Pausable_init();
-        
-        decimals = 10**18;
-        ticketPrice = 1 * decimals;
-        teamPercentage = (ticketPrice * 1000) / 10000;
-        ozFees = (2500 * decimals) / 10000;
-        //HardCoded values
+
+        require(_baseToken != address(0), "Invalid base token");
+        require(_valutAddress != address(0), "Invalid vault");
+        require(_WETH != address(0), "Invalid WETH");
+        require(_swapRouter != address(0), "Invalid router");
+
+        // Derive the base-token unit from its ERC-20 decimals (USDG = 6 -> 1e6), so the
+        // economics are correct regardless of the base token's decimals.
+        baseUnit = 10 ** IERC20Metadata(_baseToken).decimals();
+        ticketScale = 1e18;                             // numOfTicket is 1e18-scaled per ticket
+        ticketPrice = 1 * baseUnit;                     // 1 base token (e.g. 1 USDG)
+        teamPercentage = (ticketPrice * 1000) / 10000;  // 10% of ticketPrice
+        ozFees = (ticketPrice * 2500) / 10000;          // 25% of ticketPrice
+        slippageTolerance = 50;                         // 0.5% (advisory)
+        maxOracleStaleness = 3600;                      // 1h default; only used when the oracle bound is enabled
+
         teamAddress = msg.sender;
         admin = msg.sender;
         baseToken = _baseToken;
         valutAddress = _valutAddress;
         WETH = _WETH;
-        uniswapRouter = IUniswapV2Router02(_uniswapRouter);
+        swapRouter = IV3SwapRouter(_swapRouter);
     }
 
-    /**
-     * @notice Gets the price in the specified token for a given amount of base tokens
-     * @param _quoteToken The token to get the price in (address(0) for ETH)
-     * @param amount The amount of base tokens desired
-     * @return The price in the specified token (amount of quote token needed)
-     */
-    function getPrice(address _quoteToken, uint256 amount) public view returns (uint256) {
-        require(baseToken != address(0), "Base token not set");
-        require(ticketPrice > 0, "Ticket price not set");
-        require(address(uniswapRouter) != address(0), "Router not set");
-
-        if (_quoteToken == baseToken) {
-            return amount;
-        }
-
-        if (_quoteToken == address(0)) {
-            // ETH pricing via WETH -> baseToken
-            address[] memory pathEth = new address[](2);
-            pathEth[0] = WETH;
-            pathEth[1] = baseToken;
-            uint256[] memory amountsInEth = IUniswapV2Router02(uniswapRouter).getAmountsIn(amount, pathEth);
-            require(amountsInEth.length == pathEth.length && amountsInEth[0] > 0, "Invalid ETH price");
-            return amountsInEth[0];
-        }
-
-        TokenInfo memory tokenInfo = supportedTokens[_quoteToken];
-        require(tokenInfo.tokenAddress != address(0), "Token not supported");
-
-        address[] memory computedPath = _determinePath(_quoteToken, baseToken);
-        uint256[] memory amountsIn = IUniswapV2Router02(uniswapRouter).getAmountsIn(amount, computedPath);
-        require(amountsIn.length == computedPath.length && amountsIn[0] > 0, "Invalid token price");
-        return amountsIn[0];
-    }
+    // ======================== Purchase ========================
 
     /**
-     * @dev Determines a reasonable swap path from tokenIn to tokenOut.
-     * Tries direct path; if not available and neither side is WETH, tries via WETH.
+     * @notice Purchase tickets, paying in the base token, native ETH, or an allowlisted ERC-20.
+     * @param _token          Payment token (`address(0)` for native ETH).
+     * @param numOfTicket     Number of tickets to buy (scaled by `decimals`, matching ticketPrice).
+     * @param amountInMaximum Max input token/ETH to spend on the swap (ignored when paying in base token).
+     *                        Compute off-chain via QuoterV2 + slippage. Unspent input is refunded.
+     * @param swapPath        Uniswap V3 exact-output path (reverse-encoded: baseToken, fee, ..., tokenIn).
+     *                        Ignored when `_token == baseToken`.
+     * @param deadline        Latest block timestamp this purchase may execute.
      */
-    function _determinePath(address tokenIn, address tokenOut) internal view returns (address[] memory) {
-        address actualIn = tokenIn == address(0) ? WETH : tokenIn;
-
-        // Try direct two-hop
-        address[] memory directPath = new address[](2);
-        directPath[0] = actualIn;
-        directPath[1] = tokenOut;
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(1, directPath) returns (uint256[] memory) {
-            return directPath;
-        } catch {}
-
-        // Try via WETH only if it does not create a WETH self-hop
-        if (actualIn != WETH && tokenOut != WETH) {
-            address[] memory viaWethPath = new address[](3);
-            viaWethPath[0] = actualIn;
-            viaWethPath[1] = WETH;
-            viaWethPath[2] = tokenOut;
-            try IUniswapV2Router02(uniswapRouter).getAmountsOut(1, viaWethPath) returns (uint256[] memory) {
-                return viaWethPath;
-            } catch {}
-        }
-
-        revert("No valid swap path found");
-    }
-
-    /**
-     * @dev Gets the swap output for a token to base token using a specific path.
-     * @param path The swap path from token to base token.
-     * @param amount The amount of the input token to swap.
-     * @return The amount of base tokens that would be received.
-     */
-    function getTokenToBasePriceWithPath(address[] calldata path, uint256 amount)
-        external
-        view
-        returns (uint256)
-    {
-        require(path.length >= 2, "Invalid path length");
-        require(path[path.length - 1] == baseToken, "Path must end with base token");
-        require(amount > 0, "Amount must be greater than 0");
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(amount, path) returns (uint256[] memory amounts) {
-            return amounts[amounts.length - 1];
-        } catch {
-            revert("Failed to get swap price");
-        }
-    }
-
-    /**
-     * @dev Gets the swap output for base token to a token using a specific path.
-     * @param path The swap path from base token to token.
-     * @param baseAmount The amount of the base token to swap.
-     * @return The amount of the target token that would be received.
-     */
-    function getBaseToTokenPriceWithPath(address[] calldata path, uint256 baseAmount)
-        external
-        view
-        returns (uint256)
-    {
-        require(path.length >= 2, "Invalid path length");
-        require(path[0] == baseToken, "Path must start with base token");
-        require(baseAmount > 0, "Amount must be greater than 0");
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(baseAmount, path) returns (uint256[] memory amounts) {
-            return amounts[amounts.length - 1];
-        } catch {
-            revert("Failed to get swap price");
-        }
-    }
-
-    /**
-     * @dev Gets the swap output for a token to base token.
-     * Tries direct path first, then through WETH if direct path fails.
-     * @param token The token address to get price for.
-     * @param amount The amount of the token to swap.
-     * @return The amount of base tokens that would be received.
-     */
-    function getTokenToBasePrice(address token, uint256 amount)
-        external
-        view
-        returns (uint256)
-    {
-        require(token != baseToken, "Cannot swap base to base");
-        require(amount > 0, "Amount must be greater than 0");
-
-        // Try direct path first
-        address[] memory directPath = new address[](2);
-        directPath[0] = token;
-        directPath[1] = baseToken;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(amount, directPath) returns (uint256[] memory amounts) {
-            return amounts[1];
-        } catch {
-            // If direct path fails, try through WETH
-            address[] memory viaWethPath = new address[](3);
-            viaWethPath[0] = token;
-            viaWethPath[1] = WETH;
-            viaWethPath[2] = baseToken;
-
-            try IUniswapV2Router02(uniswapRouter).getAmountsOut(amount, viaWethPath) returns (uint256[] memory amounts) {
-                return amounts[2];
-            } catch {
-                revert("No valid swap path found");
-            }
-        }
-    }
-
-    /**
-     * @dev Gets the swap output for base token to a token.
-     * Tries direct path first, then through WETH if direct path fails.
-     * @param token The token address to get price for.
-     * @param baseAmount The amount of the base token to swap.
-     * @return The amount of the target token that would be received.
-     */
-    function getBaseToTokenPrice(address token, uint256 baseAmount)
-        external
-        view
-        returns (uint256)
-    {
-        require(token != baseToken, "Cannot swap base to base");
-        require(baseAmount > 0, "Amount must be greater than 0");
-
-        // Try direct path first
-        address[] memory directPath = new address[](2);
-        directPath[0] = baseToken;
-        directPath[1] = token;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(baseAmount, directPath) returns (uint256[] memory amounts) {
-            return amounts[1];
-        } catch {
-            // If direct path fails, try through WETH
-            address[] memory viaWethPath = new address[](3);
-            viaWethPath[0] = baseToken;
-            viaWethPath[1] = WETH;
-            viaWethPath[2] = token;
-
-            try IUniswapV2Router02(uniswapRouter).getAmountsOut(baseAmount, viaWethPath) returns (uint256[] memory amounts) {
-                return amounts[2];
-            } catch {
-                revert("No valid swap path found");
-            }
-        }
-    }
-
-    /**
-     * @dev Gets the amount of base token needed to get a specific amount of another token.
-     * Tries direct path first, then through WETH if direct path fails.
-     * @param token The token address to get price for.
-     * @param tokenAmount The amount of the target token desired.
-     * @return The amount of base token needed.
-     */
-    function getBaseAmountForToken(address token, uint256 tokenAmount)
-        external
-        view
-        returns (uint256)
-    {
-        require(token != baseToken, "Cannot swap base to base");
-        require(tokenAmount > 0, "Amount must be greater than 0");
-
-        address[] memory path = new address[](2);
-        path[0] = baseToken;
-        path[1] = token;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsIn(tokenAmount, path) returns (uint256[] memory amounts) {
-            return amounts[0];
-        } catch {
-            address[] memory viaWethPath = new address[](3);
-            viaWethPath[0] = baseToken;
-            viaWethPath[1] = WETH;
-            viaWethPath[2] = token;
-
-            try IUniswapV2Router02(uniswapRouter).getAmountsIn(tokenAmount, viaWethPath) returns (uint256[] memory amounts) {
-                return amounts[0];
-            } catch {
-                revert("No valid swap path found");
-            }
-        }
-    }
-
-    /**
-     * @dev Gets the price of base token in terms of WETH (native wrapped token).
-     * @param baseAmount The amount of base token to get price for.
-     * @return The amount of WETH that would be received.
-     */
-    function getBaseToWethPrice(uint256 baseAmount)
-        external
-        view
-        returns (uint256)
-    {
-        require(baseAmount > 0, "Amount must be greater than 0");
-
-        address[] memory path = new address[](2);
-        path[0] = baseToken;
-        path[1] = WETH;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(baseAmount, path) returns (uint256[] memory amounts) {
-            return amounts[1];
-        } catch {
-            revert("Failed to get swap price");
-        }
-    }
-
-    /**
-     * @dev Gets the price of WETH in terms of base token.
-     * @param wethAmount The amount of WETH to get price for.
-     * @return The amount of base token that would be received.
-     */
-    function getWethToBasePrice(uint256 wethAmount)
-        external
-        view
-        returns (uint256)
-    {
-        require(wethAmount > 0, "Amount must be greater than 0");
-
-        address[] memory path = new address[](2);
-        path[0] = WETH;
-        path[1] = baseToken;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(wethAmount, path) returns (uint256[] memory amounts) {
-            return amounts[1];
-        } catch {
-            revert("Failed to get swap price");
-        }
-    }
-
-    /**
-     * @dev Gets the price of base token in terms of any token using a direct path.
-     * @param token The token address to get price for.
-     * @param baseAmount The amount of base token to get price for.
-     * @return The amount of the target token that would be received.
-     */
-    function getBasePriceInToken(address token, uint256 baseAmount)
-        external
-        view
-        returns (uint256)
-    {
-        require(token != baseToken, "Cannot swap base to base");
-        require(baseAmount > 0, "Amount must be greater than 0");
-
-        address[] memory path = new address[](2);
-        path[0] = baseToken;
-        path[1] = token;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(baseAmount, path) returns (uint256[] memory amounts) {
-            return amounts[1];
-        } catch {
-            revert("Failed to get swap price");
-        }
-    }
-
-    /**
-     * @dev Gets the price of any token in terms of base token.
-     * @param token The token address to get price for.
-     * @param tokenAmount The amount of the token to get price for.
-     * @return The amount of base token that would be received.
-     */
-    function getTokenPriceInBase(address token, uint256 tokenAmount)
-        external
-        view
-        returns (uint256)
-    {
-        require(token != baseToken, "Cannot swap base to base");
-        require(tokenAmount > 0, "Amount must be greater than 0");
-
-        address[] memory path = new address[](2);
-        path[0] = token;
-        path[1] = baseToken;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(tokenAmount, path) returns (uint256[] memory amounts) {
-            return amounts[1];
-        } catch {
-            revert("Failed to get swap price");
-        }
-    }
-
-    /**
-     * @dev Gets the best swap path for a token to base token.
-     * Returns the path that gives the best output amount.
-     * @param token The token address to get path for.
-     * @param amount The amount of the token to swap.
-     * @return path The best swap path.
-     * @return outputAmount The expected output amount.
-     */
-    function getBestPathToBase(address token, uint256 amount)
-        external
-        view
-        returns (address[] memory path, uint256 outputAmount)
-    {
-        require(token != baseToken, "Cannot swap base to base");
-        require(amount > 0, "Amount must be greater than 0");
-
-        // Try direct path first
-        address[] memory directPath = new address[](2);
-        directPath[0] = token;
-        directPath[1] = baseToken;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(amount, directPath) returns (uint256[] memory amounts) {
-            return (directPath, amounts[1]);
-        } catch {
-            // If direct path fails, try through WETH
-            address[] memory viaWethPath = new address[](3);
-            viaWethPath[0] = token;
-            viaWethPath[1] = WETH;
-            viaWethPath[2] = baseToken;
-
-            try IUniswapV2Router02(uniswapRouter).getAmountsOut(amount, viaWethPath) returns (uint256[] memory amounts) {
-                return (viaWethPath, amounts[2]);
-            } catch {
-                revert("No valid swap path found");
-            }
-        }
-    }
-
-    /**
-     * @dev Gets the best swap path for base token to a token.
-     * Returns the path that gives the best output amount.
-     * @param token The token address to get path for.
-     * @param baseAmount The amount of base token to swap.
-     * @return path The best swap path.
-     * @return outputAmount The expected output amount.
-     */
-    function getBestPathFromBase(address token, uint256 baseAmount)
-        external
-        view
-        returns (address[] memory path, uint256 outputAmount)
-    {
-        require(token != baseToken, "Cannot swap base to base");
-        require(baseAmount > 0, "Amount must be greater than 0");
-
-        // Try direct path first
-        address[] memory directPath = new address[](2);
-        directPath[0] = baseToken;
-        directPath[1] = token;
-
-        try IUniswapV2Router02(uniswapRouter).getAmountsOut(baseAmount, directPath) returns (uint256[] memory amounts) {
-            return (directPath, amounts[1]);
-        } catch {
-            // If direct path fails, try through WETH
-            address[] memory viaWethPath = new address[](3);
-            viaWethPath[0] = baseToken;
-            viaWethPath[1] = WETH;
-            viaWethPath[2] = token;
-
-            try IUniswapV2Router02(uniswapRouter).getAmountsOut(baseAmount, viaWethPath) returns (uint256[] memory amounts) {
-                return (viaWethPath, amounts[2]);
-            } catch {
-                revert("No valid swap path found");
-            }
-        }
-    }
-
-    /**
-     * @notice Calculates the minimum amount out after applying slippage tolerance
-     * @param amount The expected amount
-     * @return The minimum amount out after slippage
-     */
-    function calculateMinAmountOut(uint256 amount) public view returns (uint256) {
-        return amount - (amount * slippageTolerance / 10000);
-    }
-
-    /**
-     * @notice Adds a supported token to the contract
-     * @param _token The token address to add
-     */
-    function addToken(address _token) external onlyOwner {
-        require(_token != address(0), "Invalid token address");
-        require(
-            supportedTokens[_token].tokenAddress == address(0),
-            "Token already exists"
-        );
-        supportedTokens[_token] = TokenInfo({tokenAddress: _token});
-    }
-
-    /**
-     * @notice Removes a supported token from the contract
-     * @param _token The token address to remove
-     */
-    function removeToken(address _token) external onlyOwner {
-        require(_token != address(0), "Invalid token address");
-        require(
-            supportedTokens[_token].tokenAddress != address(0),
-            "Token does not exist"
-        );
-
-        delete supportedTokens[_token];
-    }
-
-    /**
-     * @notice Internal function to swap tokens using UniswapV2 Router
-     * @param tokenIn The input token address (address(0) for ETH)
-     * @param tokenOut The output token address
-     * @param amountIn The amount of input tokens (or ETH if tokenIn == address(0))
-     * @param expectedAmountOut The expected amount of output tokens before slippage
-     * @param recipient The address to receive the output tokens
-     * @param path The swap path to use
-     */
-    function swapTokens(
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint256 expectedAmountOut,
-        address recipient,
-        address[] memory path
-    ) internal {
-        require(address(uniswapRouter) != address(0), "Router not set");
-        bool isETH = tokenIn == address(0);
-        uint256 minAmountOut = calculateMinAmountOut(expectedAmountOut);
-
-        // Auto-determine path when not provided
-        address[] memory swapPath = path.length > 0 ? path : _determinePath(isETH ? WETH : tokenIn, tokenOut);
-
-        if (isETH) {
-            IUniswapV2Router02(uniswapRouter).swapExactETHForTokens{value: amountIn}(
-                minAmountOut,
-                swapPath,
-                recipient,
-                block.timestamp + 10 minutes
-            );
-        } else {
-            IERC20(tokenIn).approve(address(uniswapRouter), amountIn);
-            IUniswapV2Router02(uniswapRouter).swapExactTokensForTokens(
-                amountIn,
-                minAmountOut,
-                swapPath,
-                recipient,
-                block.timestamp + 10 minutes
-            );
-        }
-    }
-
-    /**
-     * @notice Purchase tickets using various tokens
-     * @param _token The token address to pay with (address(0) for ETH)
-     * @param numOfTicket The number of tickets to purchase
-     */
-    function purchaseTicket(address _token, uint256 numOfTicket)
-        external
-        payable
-        whenNotPaused
-        nonReentrant
-    {
+    function purchaseTicket(
+        address _token,
+        uint256 numOfTicket,
+        uint256 amountInMaximum,
+        bytes calldata swapPath,
+        uint256 deadline
+    ) external payable whenNotPaused nonReentrant {
         require(numOfTicket > 0, "Invalid amount");
-        uint256 ticketAmount = (numOfTicket * ticketPrice) / decimals; 
-        uint256 teamAmount = (numOfTicket * teamPercentage) / decimals; 
-        uint256 ozFee = (numOfTicket * ozFees) / decimals; 
-        uint256 totalAmount = ticketAmount + teamAmount + ozFee; 
+        require(block.timestamp <= deadline, "Deadline passed");
+
+        uint256 ticketAmount = (numOfTicket * ticketPrice) / ticketScale;
+        uint256 teamAmount = (numOfTicket * teamPercentage) / ticketScale;
+        uint256 ozFee = (numOfTicket * ozFees) / ticketScale;
+        uint256 totalAmount = ticketAmount + teamAmount + ozFee;
+        require(totalAmount > 0, "Zero total");
+
+        uint256 refundAmount;
 
         if (_token == baseToken) {
-            require(
-                IERC20(_token).transferFrom(
-                    msg.sender,
-                    address(this),
-                    totalAmount
-                ),
-                "Transfer failed"
-            );
-            IERC20(_token).transfer(teamAddress, teamAmount);
-            IERC20(_token).transfer(admin, ozFee);
-            IERC20(_token).transfer(valutAddress, ticketAmount);
+            // Direct payment in the base token — no swap.
+            require(msg.value == 0, "No ETH expected");
+            IERC20(baseToken).safeTransferFrom(msg.sender, address(this), totalAmount);
         } else if (_token == address(0)) {
-            uint256 ethNeeded = getPrice(address(0), totalAmount);
-            require(ethNeeded > 0, "Invalid ETH amount");
-            require(msg.value >= ethNeeded, "Insufficient ETH sent");
-            if (msg.value > ethNeeded) {
-                payable(msg.sender).transfer(msg.value - ethNeeded);
-            }
-            swapTokens(
-                address(0),
-                baseToken,
-                ethNeeded,
-                totalAmount, 
-                address(this),
-                new address[](0)
-            );
-            IERC20(baseToken).transfer(teamAddress, teamAmount);
-            // IERC20(baseToken).transfer(admin, ozFee);
-            IERC20(baseToken).transfer(valutAddress, ticketAmount);
-            uint256 remaining = IERC20(baseToken).balanceOf(address(this));
-            IERC20(baseToken).transfer(admin, remaining);
+            // Native ETH -> base token, exact output.
+            require(amountInMaximum > 0, "Zero max in");
+            require(msg.value >= amountInMaximum, "Insufficient ETH");
+            uint256 spentEth = _swapEthForExactBase(totalAmount, amountInMaximum, swapPath);
+            _requireOracleBound(WETH, spentEth, totalAmount);
+            refundAmount = msg.value - spentEth; // refunded at the end
         } else {
-            TokenInfo memory tokenInfo = supportedTokens[_token];
-            require(tokenInfo.tokenAddress != address(0), "Token not supported");
-            
-            uint256 tokenAmount = getPrice(_token, totalAmount);
-            require(tokenAmount > 0, "Invalid token amount");
-            
-            require(
-                IERC20(_token).transferFrom(msg.sender, address(this), tokenAmount),
-                "Transfer failed"
-            );
-            
-            swapTokens(
-                _token,
-                baseToken,
-                tokenAmount,
-                totalAmount,
-                address(this),
-                new address[](0)
-            );
-            
-            IERC20(baseToken).transfer(teamAddress, teamAmount);
-            // IERC20(baseToken).transfer(admin, ozFee);
-            IERC20(baseToken).transfer(valutAddress, ticketAmount);
-            uint256 remaining = IERC20(baseToken).balanceOf(address(this));
-            IERC20(baseToken).transfer(admin, remaining);
+            // Allowlisted ERC-20 -> base token, exact output.
+            require(msg.value == 0, "No ETH expected");
+            require(supportedTokens[_token].tokenAddress != address(0), "Token not supported");
+            require(amountInMaximum > 0, "Zero max in");
+            IERC20(_token).safeTransferFrom(msg.sender, address(this), amountInMaximum);
+            uint256 spent = _swapTokenForExactBase(_token, totalAmount, amountInMaximum, swapPath);
+            _requireOracleBound(_token, spent, totalAmount);
+            uint256 leftover = amountInMaximum - spent;
+            if (leftover > 0) {
+                IERC20(_token).safeTransfer(msg.sender, leftover);
+                emit PaymentRefunded(msg.sender, _token, leftover);
+            }
         }
+
+        // At this point the contract holds exactly `totalAmount` base tokens. Distribute.
+        IERC20(baseToken).safeTransfer(teamAddress, teamAmount);
+        IERC20(baseToken).safeTransfer(valutAddress, ticketAmount);
+        IERC20(baseToken).safeTransfer(admin, ozFee);
 
         userInfo[msg.sender].ticketBalance += numOfTicket;
         userInfo[msg.sender].lastDepositedTime = block.timestamp;
         emit TicketPurchased(msg.sender, numOfTicket, _token);
+
+        // External value transfer last (CEI); nonReentrant also guards.
+        if (refundAmount > 0) {
+            (bool ok, ) = payable(msg.sender).call{value: refundAmount}("");
+            require(ok, "ETH refund failed");
+            emit PaymentRefunded(msg.sender, address(0), refundAmount);
+        }
     }
 
-    /**
-     * @notice Sets the admin address
-     * @param newAdmin The new admin address
-     */
+    // ======================== Swap helpers ========================
+
+    /// @dev Swaps an allowlisted ERC-20 for exactly `amountOut` base tokens. Returns input spent.
+    function _swapTokenForExactBase(
+        address tokenIn,
+        uint256 amountOut,
+        uint256 amountInMaximum,
+        bytes calldata path
+    ) internal returns (uint256 spent) {
+        require(path.length > 0, "Path required");
+        IERC20(tokenIn).forceApprove(address(swapRouter), amountInMaximum);
+        spent = swapRouter.exactOutput(
+            IV3SwapRouter.ExactOutputParams({
+                path: path,
+                recipient: address(this),
+                amountOut: amountOut,
+                amountInMaximum: amountInMaximum
+            })
+        );
+        // Reset allowance so no residual approval lingers.
+        IERC20(tokenIn).forceApprove(address(swapRouter), 0);
+    }
+
+    /// @dev Swaps native ETH for exactly `amountOut` base tokens via multicall(exactOutput, refundETH).
+    ///      Forwards `amountInMaximum` as value; the router wraps only what it needs and refunds the rest.
+    function _swapEthForExactBase(
+        uint256 amountOut,
+        uint256 amountInMaximum,
+        bytes calldata path
+    ) internal returns (uint256 spent) {
+        require(path.length > 0, "Path required");
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = abi.encodeWithSelector(
+            IV3SwapRouter.exactOutput.selector,
+            IV3SwapRouter.ExactOutputParams({
+                path: path,
+                recipient: address(this),
+                amountOut: amountOut,
+                amountInMaximum: amountInMaximum
+            })
+        );
+        calls[1] = abi.encodeWithSelector(IV3SwapRouter.refundETH.selector);
+        bytes[] memory results = swapRouter.multicall{value: amountInMaximum}(calls);
+        spent = abi.decode(results[0], (uint256));
+    }
+
+    // ======================== Optional oracle bound ========================
+
+    /// @dev Reverts if the swap's effective price deviates from the Chainlink cross-rate by
+    ///      more than `maxOracleDeviationBps`. No-op unless enabled AND both feeds are set.
+    ///      Requires the two feeds to share the same decimals (Chainlink USD feeds are 8).
+    ///      Off by default — TEST ON TESTNET before enabling on mainnet.
+    function _requireOracleBound(address token, uint256 spent, uint256 baseOut) internal view {
+        if (maxOracleDeviationBps == 0) return;
+        address tf = priceFeeds[token];
+        address bf = priceFeeds[baseToken];
+        if (tf == address(0) || bf == address(0)) return;
+
+        (uint80 tRound, int256 tp, , uint256 tUpdated, uint80 tAnswered) =
+            AggregatorV3Interface(tf).latestRoundData();
+        (uint80 bRound, int256 bp, , uint256 bUpdated, uint80 bAnswered) =
+            AggregatorV3Interface(bf).latestRoundData();
+        require(tp > 0 && bp > 0, "Bad oracle price");
+        // Round must be complete (answeredInRound >= roundId) and fresh (updatedAt within the
+        // staleness window). A zero/old updatedAt underflows or exceeds the bound and reverts.
+        require(tAnswered >= tRound && bAnswered >= bRound, "Stale oracle round");
+        require(
+            block.timestamp - tUpdated <= maxOracleStaleness &&
+                block.timestamp - bUpdated <= maxOracleStaleness,
+            "Oracle price too old"
+        );
+        require(
+            AggregatorV3Interface(tf).decimals() == AggregatorV3Interface(bf).decimals(),
+            "Feed decimals mismatch"
+        );
+
+        uint256 tDec = IERC20Metadata(token).decimals();
+        uint256 bDec = IERC20Metadata(baseToken).decimals();
+        // Oracle-implied input to obtain `baseOut` of base token:
+        //   implied = baseOut * (basePrice/tokenPrice) * 10^tokenDec / 10^baseDec
+        uint256 implied = (baseOut * uint256(bp) * (10 ** tDec)) / (uint256(tp) * (10 ** bDec));
+        uint256 diff = spent > implied ? spent - implied : implied - spent;
+        require(diff * 10000 <= implied * maxOracleDeviationBps, "Oracle deviation exceeded");
+    }
+
+    // ======================== Allowlist ========================
+
+    function addToken(address _token) external onlyOwner {
+        require(_token != address(0), "Invalid token address");
+        require(_token != baseToken, "Base token is implicit");
+        require(supportedTokens[_token].tokenAddress == address(0), "Token already exists");
+        supportedTokens[_token] = TokenInfo({tokenAddress: _token});
+        emit SetTokenAddress(_token);
+    }
+
+    function removeToken(address _token) external onlyOwner {
+        require(supportedTokens[_token].tokenAddress != address(0), "Token does not exist");
+        delete supportedTokens[_token];
+        emit RemoveTokenAddress(_token);
+    }
+
+    // ======================== Admin setters ========================
+
     function setAdmin(address newAdmin) external onlyOwner {
         require(newAdmin != address(0), "Invalid admin address");
         admin = newAdmin;
         emit SetAdmin(newAdmin);
     }
 
-    /**
-     * @notice Sets the vault address (destination for ticket funds)
-     * @param newVault The new vault address
-     */
     function setVaultAddress(address newVault) external onlyOwner {
         require(newVault != address(0), "Invalid Vault address");
         valutAddress = newVault;
         emit SetVaultAddress(newVault);
     }
 
-    /**
-     * @notice Sets the UniswapV2 router address
-     * @param _router The router address
-     */
     function setRouterAddress(address _router) external onlyOwner {
         require(_router != address(0), "Invalid router address");
-        uniswapRouter = IUniswapV2Router02(_router);
+        swapRouter = IV3SwapRouter(_router);
         emit SetRouterAddress(_router);
     }
 
-    /**
-     * @notice Sets the slippage tolerance for swaps
-     * @param _slippageTolerance New slippage tolerance in basis points (e.g. 50 = 0.5%, 100 = 1%)
-     */
     function setSlippageTolerance(uint256 _slippageTolerance) external onlyOwner {
-        require(_slippageTolerance > 0 && _slippageTolerance <= 1000, "Invalid slippage: must be between 0% and 10%");
+        require(_slippageTolerance > 0 && _slippageTolerance <= 1000, "Invalid slippage: 0-10%");
         slippageTolerance = _slippageTolerance;
         emit SetSlippageTolerance(_slippageTolerance);
     }
 
-    /**
-     * @notice Sets the base token address
-     * @param newBaseToken The new base token address
-     */
+    /// @notice Change the base token. Also refreshes `baseUnit` from the new token's
+    ///         decimals. If decimals differ, re-set `ticketPrice`/`ozFees` afterwards.
     function setBaseToken(address newBaseToken) external onlyOwner {
         require(newBaseToken != address(0), "Invalid base token address");
         baseToken = newBaseToken;
+        baseUnit = 10 ** IERC20Metadata(newBaseToken).decimals();
         emit SetBaseTokens(newBaseToken);
     }
 
-    /**
-     * @notice Sets the OZ fees percentage
-     * @param amount The new OZ fees percentage (in basis points, e.g. 2500 = 25%)
-     */
     function setOZFees(uint256 amount) external onlyOwner {
         require(amount > 0, "Invalid OZ fees");
-        ozFees = (amount * decimals) / 10000;
+        ozFees = (amount * baseUnit) / 10000; // `amount` in bps of one base token
         emit SetOZFees(amount);
     }
 
-    /**
-     * @notice Sets the team percentage
-     * @param amount The new team percentage (in basis points, e.g. 1000 = 10%)
-     */
     function setTeamPercentage(uint256 amount) external onlyOwner {
         require(amount <= 2000, "Max 20%");
         teamPercentage = (ticketPrice * amount) / 10000;
         emit SetTeamPercentage(amount);
     }
 
-    /**
-     * @notice Sets the team address
-     * @param newTeamAddress The new team address
-     */
     function setTeamAddress(address newTeamAddress) external onlyOwner {
         require(newTeamAddress != address(0), "Invalid team address");
         teamAddress = newTeamAddress;
         emit SetTeamAddress(newTeamAddress);
     }
 
-    // Removed setSwapQuoteQuery: pricing now uses UniswapV2 router
-
-    /**
-     * @notice Sets the ticket price
-     * @param price The new ticket price
-     */
     function setTicketPrice(uint256 price) external onlyOwner {
         require(price > 0, "Invalid ticket price");
-        ticketPrice = price * decimals;
-        // Update team percentage based on new ticket price
-        teamPercentage = (ticketPrice * 1000) / 10000; // 10% by default
+        ticketPrice = price * baseUnit; // `price` is a whole-token count (e.g. 2 => 2 USDG)
+        // Reset both derived fees to their default share of the new price (team 10%, oz 25%),
+        // matching initialize(). Override afterwards with setTeamPercentage / setOZFees if needed.
+        teamPercentage = (ticketPrice * 1000) / 10000;
+        ozFees = (ticketPrice * 2500) / 10000;
         emit SetTicketprice(price);
     }
 
-    /**
-     * @notice Pauses the contract
-     */
+    /// @notice Configure the Chainlink USD feed for a token (or the base token). Set both a
+    ///         token feed and the base-token feed, then a non-zero deviation, to enable the bound.
+    function setPriceFeed(address token, address feed) external onlyOwner {
+        require(token != address(0), "Invalid token");
+        priceFeeds[token] = feed; // feed == address(0) clears it
+        emit SetPriceFeed(token, feed);
+    }
+
+    /// @notice Set the max allowed swap-vs-oracle deviation in bps (0 disables the check).
+    function setMaxOracleDeviation(uint256 bps) external onlyOwner {
+        require(bps <= 10000, "Max 100%");
+        maxOracleDeviationBps = bps;
+        emit SetMaxOracleDeviation(bps);
+    }
+
+    /// @notice Set the max age (seconds) a Chainlink round may be before the oracle bound
+    ///         rejects it. Only consulted while the bound is enabled (maxOracleDeviationBps > 0).
+    function setMaxOracleStaleness(uint256 maxAge) external onlyOwner {
+        require(maxAge > 0, "Invalid staleness");
+        maxOracleStaleness = maxAge;
+        emit SetMaxOracleStaleness(maxAge);
+    }
+
     function pause() external onlyOwner {
         _pause();
     }
 
-    /**
-     * @notice Unpauses the contract
-     */
     function unpause() external onlyOwner {
         _unpause();
     }
 
-    /**
-     * @notice Allows the contract to receive ETH
-     */
+    // ======================== Rescue ========================
+    // The contract is designed to hold ~0 assets between purchases (each buy nets to zero),
+    // so anything sitting here was sent by mistake. These let the owner recover it.
+
+    /// @notice Recover ERC-20 tokens accidentally sent to (or stranded in) this contract.
+    function rescueERC20(address token, address to, uint256 amount) external onlyOwner {
+        require(to != address(0), "Invalid recipient");
+        IERC20(token).safeTransfer(to, amount);
+        emit RescueERC20(token, to, amount);
+    }
+
+    /// @notice Recover native ETH accidentally sent to (or stranded in) this contract.
+    function rescueETH(address to, uint256 amount) external onlyOwner {
+        require(to != address(0), "Invalid recipient");
+        (bool ok, ) = payable(to).call{value: amount}("");
+        require(ok, "ETH rescue failed");
+        emit RescueETH(to, amount);
+    }
+
+    /// @notice Accept ETH (needed to receive `refundETH` surplus from the router).
     receive() external payable {}
+
+    /// @dev Reserved storage to allow appending state in future upgrades without collisions.
+    uint256[50] private __gap;
 }
