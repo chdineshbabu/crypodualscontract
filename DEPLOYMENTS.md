@@ -14,17 +14,25 @@ addresses after deploying. (Berachain history lives in the old `data.doc`.)
 | Uniswap V3 QuoterV2 | `0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7` |
 | Uniswap V3 Factory | `0x1f7d7550b1b028f7571e69a784071f0205fd2efa` |
 
-### Game contracts (fill after deploy)
+### Game contracts — DEPLOYED 2026-08 (all verified ✅ on robinhoodchain.blockscout.com)
+Deployer / owner / admin / team / vault-admin: `0x5Eb6Cc7E692D00C8f3d824a28A0a515b843795f6`
+(all operator roles on one key; `valutAddress` = the vault proxy). ticketPrice = **1 USDG**.
+
 | What | Address |
 |------|---------|
-| TicketContract (proxy) | `0x… (TODO)` |
-| TicketContract ProxyAdmin | `0x… (TODO)` |
-| TicketContract implementation | `0x… (TODO)` |
-| DuelsVault (proxy) | `0x… (TODO)` |
-| DuelsVault ProxyAdmin | `0x… (TODO)` |
-| DuelsVault implementation | `0x… (TODO)` |
+| **TicketContract (proxy)** | `0x6a4045dAbd637239d1185f73bdC1c77ED6E282B6` |
+| TicketContract implementation | `0xe2529CF29D87C469b4A98E407d6c2D908517dF8e` |
+| **DuelsVault (proxy)** | `0xB2F5587f7493d152F4F18F5a8370c85a7508E301` |
+| DuelsVault implementation | `0x10f5c337efee0508568C76811522E74Dc15Fa560` |
+| ProxyAdmin (shared) | `0xF1c40bB1b04fF15a66f2084FC94c9a7393d0C6f1` |
 
-Ignition also records these under `ignition/deployments/chain-4663/deployed_addresses.json`.
+> Ignition record: `ignition/deployments/chain-4663/deployed_addresses.json`.
+> App envs wired: `crypto_duels/{game-backend,backend,frontend}/.env` (RPC + addresses,
+> `NEXT_PUBLIC_CHAIN_ENV=mainnet`).
+
+**Still to do before going live:** create a MAINNET Alchemy webhook (+ set
+`ALCHEMY_WEBHOOK_SIGNING_KEY`); fund `0x5Eb6…` with USDG for prize liquidity;
+verify each meme token's V3 pool depth before `addToken`; resolve the G3 legal gate.
 
 ## Robinhood Chain testnet (chainId 46630) — MOCK deploy, 2026-08
 

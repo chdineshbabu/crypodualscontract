@@ -39,10 +39,12 @@ async function main() {
   line(`deployer        : ${deployer.address}`);
   line(`balance         : ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} ETH\n`);
 
-  // Fresh receive-only recipients so we can assert the split cleanly.
-  const team = ethers.Wallet.createRandom().address;
-  const admin = ethers.Wallet.createRandom().address; // oz-fee recipient
-  const buyer = deployer.address;                      // the only funded (gas) account
+  // All operator roles (owner/admin/team/oz-fee/vault-admin) resolve to the deployer key,
+  // so a single key runs everything (withdraws, allowlist, fee collection). `valutAddress`
+  // is the vault PROXY (the prize-pool destination), not an EOA — that is intentional.
+  const team = deployer.address;   // team-cut recipient
+  const admin = deployer.address;  // oz-fee recipient
+  const buyer = deployer.address;  // the only funded (gas) account
 
   // ---- 1. Mock tokens ----
   const ERC = await ethers.getContractFactory("MockERC20");
@@ -106,9 +108,9 @@ async function main() {
   await (await base.approve(await ticket.getAddress(), TOTAL)).wait();
   await (await ticket.purchaseTicket(await base.getAddress(), ONE_TICKET, 0, "0x", await deadline())).wait();
 
-  line(`team    USDG: ${fmt6(await base.balanceOf(team))}  (expect ${fmt6(TEAM_AMT)})`);
+  // NOTE: team/oz-fee recipients == deployer, so those cuts return to the deployer.
+  // The split still executes on-chain; the clean, separable checks are vault + residual.
   line(`vault   USDG: ${fmt6(await base.balanceOf(await vaultProxy.getAddress()))}  (expect ${fmt6(TICKET_AMT)})`);
-  line(`admin   USDG: ${fmt6(await base.balanceOf(admin))}  (expect ${fmt6(OZ_AMT)})`);
   line(`ticket-contract residual USDG: ${fmt6(await base.balanceOf(await ticket.getAddress()))} (expect 0)`);
   line(`buyer on-chain ticketBalance : ${ethers.formatUnits((await ticket.userInfo(buyer)).ticketBalance, 18)}`);
 
@@ -133,6 +135,34 @@ async function main() {
   await (await vault.withdraw(winner, payout)).wait();
   line(`vaultBalance : ${fmt6(vaultBalBefore)} -> ${fmt6(await vault.vaultBalance())}`);
   line(`winner  USDG: ${fmt6(await base.balanceOf(winner))}  (expect ${fmt6(payout)})`);
+
+  // ---- 7. Verify every contract on Blockscout (skips the local hardhat network) ----
+  if (Number(net.chainId) !== 31337) {
+    line(`\n--- verifying on Blockscout (waiting ~20s for indexing) ---`);
+    await new Promise((r) => setTimeout(r, 20000));
+    const verify = async (label, address, constructorArguments, contract) => {
+      try {
+        await hre.run("verify:verify", { address, constructorArguments, ...(contract ? { contract } : {}) });
+        line(`  ✓ ${label}`);
+      } catch (e) {
+        const m = (e.message || "").toLowerCase();
+        line(m.includes("already verified") ? `  • already verified: ${label}` : `  ✗ ${label} — ${e.shortMessage || e.message}`);
+      }
+    };
+    const MOCK20 = "contracts/mocks/MockERC20.sol:MockERC20";
+    const ROUTER = "contracts/mocks/MockV3Router.sol:MockV3Router";
+    const PROXY = "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol:TransparentUpgradeableProxy";
+    const PA = "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol:ProxyAdmin";
+    await verify("USDG mock", await base.getAddress(), ["Global Dollar", "USDG", 6], MOCK20);
+    await verify("MEME mock", await meme.getAddress(), ["Meme", "MEME", 18], MOCK20);
+    await verify("WETH mock", await weth.getAddress(), ["Wrapped ETH", "WETH", 18], MOCK20);
+    await verify("MockV3Router", await router.getAddress(), [await meme.getAddress(), await base.getAddress(), MEME_FIXED_IN], ROUTER);
+    await verify("ProxyAdmin", await proxyAdmin.getAddress(), [], PA);
+    await verify("DuelsVault impl", await vaultImpl.getAddress(), []);
+    await verify("TicketContract impl", await ticketImpl.getAddress(), []);
+    await verify("DuelsVault proxy", await vaultProxy.getAddress(), [await vaultImpl.getAddress(), await proxyAdmin.getAddress(), initVault], PROXY);
+    await verify("TicketContract proxy", await ticketProxy.getAddress(), [await ticketImpl.getAddress(), await proxyAdmin.getAddress(), initTicket], PROXY);
+  }
 
   // ---- summary for backend env ----
   line(`\n=== DONE — set these in the backend .env ===`);

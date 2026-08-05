@@ -1,0 +1,9 @@
+{
+  "DeployModule#DuelsVaultImplementation": "0x10f5c337efee0508568C76811522E74Dc15Fa560",
+  "DeployModule#TicketImplementation": "0xe2529CF29D87C469b4A98E407d6c2D908517dF8e",
+  "DeployModule#TicketProxyAdmin": "0xF1c40bB1b04fF15a66f2084FC94c9a7393d0C6f1",
+  "DeployModule#DuelsVaultProxy": "0xB2F5587f7493d152F4F18F5a8370c85a7508E301",
+  "DeployModule#DuelsVaultAtProxy": "0xB2F5587f7493d152F4F18F5a8370c85a7508E301",
+  "DeployModule#TicketProxy": "0x6a4045dAbd637239d1185f73bdC1c77ED6E282B6",
+  "DeployModule#TicketAtProxy": "0x6a4045dAbd637239d1185f73bdC1c77ED6E282B6"
+}
