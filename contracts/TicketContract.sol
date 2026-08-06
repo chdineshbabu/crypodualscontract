@@ -287,18 +287,56 @@ contract TicketContract is Initializable, OwnableUpgradeable, ReentrancyGuardUpg
 
     // ======================== Allowlist ========================
 
+    /// @notice The full set of currently-allowlisted payment tokens, in one call.
+    function getSupportedTokens() external view returns (address[] memory) {
+        return _supportedList;
+    }
+
     function addToken(address _token) external onlyOwner {
         require(_token != address(0), "Invalid token address");
         require(_token != baseToken, "Base token is implicit");
         require(supportedTokens[_token].tokenAddress == address(0), "Token already exists");
         supportedTokens[_token] = TokenInfo({tokenAddress: _token});
+        _supportedList.push(_token);
         emit SetTokenAddress(_token);
     }
 
     function removeToken(address _token) external onlyOwner {
         require(supportedTokens[_token].tokenAddress != address(0), "Token does not exist");
         delete supportedTokens[_token];
+        _listRemove(_token);
         emit RemoveTokenAddress(_token);
+    }
+
+    /// @notice One-time backfill for tokens allowlisted BEFORE this upgrade — the
+    ///         `supportedTokens` mapping had them but `_supportedList` starts empty.
+    ///         Idempotent (skips zeros, non-supported, and already-listed). Owner-only.
+    function syncSupportedTokens(address[] calldata tokens) external onlyOwner {
+        for (uint256 i = 0; i < tokens.length; i++) {
+            address t = tokens[i];
+            if (supportedTokens[t].tokenAddress != address(0) && !_listContains(t)) {
+                _supportedList.push(t);
+            }
+        }
+    }
+
+    function _listRemove(address _token) internal {
+        uint256 n = _supportedList.length;
+        for (uint256 i = 0; i < n; i++) {
+            if (_supportedList[i] == _token) {
+                _supportedList[i] = _supportedList[n - 1];
+                _supportedList.pop();
+                return;
+            }
+        }
+    }
+
+    function _listContains(address _token) internal view returns (bool) {
+        uint256 n = _supportedList.length;
+        for (uint256 i = 0; i < n; i++) {
+            if (_supportedList[i] == _token) return true;
+        }
+        return false;
     }
 
     // ======================== Admin setters ========================
@@ -417,6 +455,12 @@ contract TicketContract is Initializable, OwnableUpgradeable, ReentrancyGuardUpg
     /// @notice Accept ETH (needed to receive `refundETH` surplus from the router).
     receive() external payable {}
 
+    /// @dev Enumerable list of allowlisted tokens, kept in sync with `supportedTokens` so
+    ///      getSupportedTokens() can return the full set in ONE on-chain call (no event scan).
+    address[] private _supportedList;
+
     /// @dev Reserved storage to allow appending state in future upgrades without collisions.
-    uint256[50] private __gap;
+    ///      Reduced 50 -> 49 to make room for `_supportedList` above (storage-layout safe:
+    ///      the new slot consumes one former gap slot; all existing slots are unchanged).
+    uint256[49] private __gap;
 }

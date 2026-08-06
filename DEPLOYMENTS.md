@@ -21,7 +21,8 @@ Deployer / owner / admin / team / vault-admin: `0x5Eb6Cc7E692D00C8f3d824a28A0a51
 | What | Address |
 |------|---------|
 | **TicketContract (proxy)** | `0x6a4045dAbd637239d1185f73bdC1c77ED6E282B6` |
-| TicketContract implementation | `0xe2529CF29D87C469b4A98E407d6c2D908517dF8e` |
+| TicketContract implementation (v2, current) | `0xCE0fEec7786F0e8E139d3499041bA911bd4C1195` |
+| TicketContract implementation (v1, original) | `0xe2529CF29D87C469b4A98E407d6c2D908517dF8e` |
 | **DuelsVault (proxy)** | `0xB2F5587f7493d152F4F18F5a8370c85a7508E301` |
 | DuelsVault implementation | `0x10f5c337efee0508568C76811522E74Dc15Fa560` |
 | ProxyAdmin (shared) | `0xF1c40bB1b04fF15a66f2084FC94c9a7393d0C6f1` |
@@ -29,6 +30,13 @@ Deployer / owner / admin / team / vault-admin: `0x5Eb6Cc7E692D00C8f3d824a28A0a51
 > Ignition record: `ignition/deployments/chain-4663/deployed_addresses.json`.
 > App envs wired: `crypto_duels/{game-backend,backend,frontend}/.env` (RPC + addresses,
 > `NEXT_PUBLIC_CHAIN_ENV=mainnet`).
+
+**Upgrade v1 → v2 (2026-08):** added `getSupportedTokens()` (enumerable allowlist) +
+`syncSupportedTokens()` backfill. Proxy address/state unchanged. `scripts/upgradeTicket.js`
+(deploy impl → `ProxyAdmin.upgrade` → `syncSupportedTokens([DIH])`). Upgrade tx
+`0xcead4b4c…e704c6`. Backend now reads the allowlist via `getSupportedTokens()` (no event scan).
+
+Allowlisted tokens (mainnet): **DIH** `0x0c1eD62D7811e5b437e537Ac9d0592469C119C74`.
 
 **Still to do before going live:** create a MAINNET Alchemy webhook (+ set
 `ALCHEMY_WEBHOOK_SIGNING_KEY`); fund `0x5Eb6…` with USDG for prize liquidity;

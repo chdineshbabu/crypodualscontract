@@ -80,6 +80,24 @@ describe("TicketContract (Uniswap V3)", function () {
     expect(info.ticketBalance).to.equal(ONE_TICKET);
   });
 
+  it("getSupportedTokens enumerates the allowlist and stays in sync on add/remove/sync", async () => {
+    const memeAddr = await meme.getAddress();
+    const wethAddr = await weth.getAddress();
+    expect([...(await ticket.getSupportedTokens())]).to.deep.equal([]);
+
+    await ticket.connect(owner).addToken(memeAddr);
+    await ticket.connect(owner).addToken(wethAddr);
+    expect([...(await ticket.getSupportedTokens())]).to.deep.equal([memeAddr, wethAddr]);
+
+    // swap-remove keeps the survivor
+    await ticket.connect(owner).removeToken(memeAddr);
+    expect([...(await ticket.getSupportedTokens())]).to.deep.equal([wethAddr]);
+
+    // backfill is idempotent: weth already listed, meme no longer supported → both skipped
+    await ticket.connect(owner).syncSupportedTokens([wethAddr, memeAddr]);
+    expect([...(await ticket.getSupportedTokens())]).to.deep.equal([wethAddr]);
+  });
+
   it("buys a ticket paying in an allowlisted token (V3 exact-output) and refunds the remainder", async () => {
     await ticket.connect(owner).addToken(await meme.getAddress());
 
